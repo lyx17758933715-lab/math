@@ -1,29 +1,177 @@
-% This is a simple sample document.  For more complicated documents take a look in the exercise tab. Note that everything that comes after a % symbol is treated as comment and ignored when the code is compiled.
+\documentclass{article}
+\usepackage{ctex}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning}
+\usepackage{geometry}
+\geometry{a4paper,left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
 
-\documentclass{article} % \documentclass{} is the first command in any LaTeX code.  It is used to define what kind of document you are creating such as an article or a book, and begins the document preamble
+\title{智能巡检机器人出厂性能测试任务规划\\ ——问题二：单班次测试调度优化}
+\author{}
+\date{}
 
-\usepackage{amsmath} % \usepackage is a command that allows you to add functionality to your LaTeX code
+\begin{document}
 
-\title{Simple Sample} % Sets article title
-\author{My Name} % Sets authors name
-\date{\today} % Sets date for date compiled
+\maketitle
 
-% The preamble ends with the command \begin{document}
-\begin{document} % All begin commands must be paired with an end command somewhere
-\maketitle % creates title using information in preamble (title, author, date)
+\section{问题二描述}
+一个测试班组承接120台智能巡检机器人的测试任务，每日仅安排1个固定班次，每个班次工作时长严格不超过12小时，班次结束时未完成的测试工序必须立即中断，下一工作日班次需完整重新开始该工序测试。要求在完成任务天数最短且全流程总漏判概率尽可能低的双目标下，制定完整的测试工作计划。
 
-\section{Hello World!} % creates a section
+\section{模型基本假设}
+\begin{enumerate}
+    \item 测试工序的标准时长、调试时长、各类异常事件的发生概率为给定参数，不同机器人保持一致。
+    \item 子系统缺陷、操作差错、设备故障为相互独立的随机事件。
+    \item 运入、运出、设备调试时长固定，操作过程中无设备故障风险。
+    \item 班次切换无额外时间损耗。
+    \item 设备仅在首次启用时执行1次调试。
+\end{enumerate}
 
-\textbf{Hello World!} Today I am learning \LaTeX. %notice how the command will end at the first non-alphabet charecter such as the . after \LaTeX
-\LaTeX{} is a great program for writing math. I can write in line math such as $a^2+b^2=c^2$ %$ tells LaTexX to compile as math
-. I can also give equations their own space:
-\begin{equation} % Creates an equation environment and is compiled as math
-  \gamma^2+\theta^2=\omega^2
-\end{equation}
-If I do not leave any blank lines \LaTeX{} will continue  this text without making it into a new paragraph.  Notice how there was no indentation in the text after equation (1).
-Also notice how even though I hit enter after that sentence and here $\downarrow$
-\LaTeX{} formats the sentence without any break.  Also   look  how      it   doesn't     matter          how    many  spaces     I put     between       my    words.
+\section{运入运出与调试规则}
+\begin{itemize}
+    \item 单台机器人运入、运出各耗时0.5h，可同步开展，计入班次工作时长。
+    \item 设备首次启用时执行调试（A:20min, B:15min, C:15min, E:30min），全周期仅一次。
+\end{itemize}
 
-For a new essay I can leave a blank space in my code.
+\section{随机事件概率参数}
+\begin{itemize}
+    \item \textbf{子系统缺陷}：A、B、C缺陷概率3\%, 2.5\%, 2\%；D缺陷概率0.2\%。
+    \item \textbf{操作差错}：A、B、C、E差错概率2.5\%, 3\%, 1.5\%, 2\%；误判（触发重测）占60\%，漏判（直接通过）占40\%。
+    \item \textbf{设备故障}：0-80h内故障概率2\%, 3\%, 1.5\%, 2\%；80-160h内4\%, 6\%, 4\%, 4\%。
+    \item \textbf{重测上限}：场景1（中断/故障）最多3次，场景2（测试误差）最多2次。
+\end{itemize}
 
-\end{document} % This is the end of the document
+\section{关键概念定义}
+\begin{itemize}
+    \item \textbf{设备累计工作时长 \(H_o\)}：包含测试执行、调试等所有运行时间，跨班次连续计算，用于确定故障概率。
+    \item \textbf{有效测试时长}：仅指工序标准测试时长\(t_o\)，用于计算有效工作时间比\(YXB_o\)，不包含运入/运出、调试、等待时间。
+\end{itemize}
+
+\section{GSPN模型要素}
+
+\begin{table}[H]
+\centering
+\caption{库所定义}
+\begin{tabular}{lll}
+\toprule
+\textbf{类别} & \textbf{库所符号} & \textbf{含义} \\
+\midrule
+机器人状态 & \(P_{r,in},P_{r,wait},P_{r,o,run},P_{r,o,pass},P_{r,o,fail},P_{r,finish},P_{r,elim},P_{r,outdone}\) & 机器人全生命周期状态 \\
+连续未通过 & \(P_{r,last0},P_{r,last1}\) & 上次测试通过/未通过 \\
+设备调试 & \(P_{o,needdebug},P_{o,debugging},P_{o,debugdone}\) & 首次调试状态 \\
+资源状态 & \(P_{o,free},P_{o,busy},P_{testbed,free},P_{testbed,busy}\) & 工位与测试台（测试台初始2） \\
+班次计数 & \(P_{shift,valid},P_{shift,end},P_{r,o,count1},P_{r,o,count2}\) & 班次状态与重测计数 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{关键变迁规则}
+\begin{tabular}{ll}
+\toprule
+\textbf{变迁} & \textbf{规则} \\
+\midrule
+运入/运出 & 时间变迁，时延0.5h，占用并释放测试台 \\
+首次调试 & 时间变迁，时延为调试时长，完成后永久解锁 \\
+测试调度 & 瞬时变迁，需资源空闲、班次有效、剩余时长充足 \\
+测试执行 & 时间变迁，时延为工序标准时长（A:2h, B:1.5h, C:2h, E:2.5h） \\
+结果随机 & 依据概率分支：合格/故障中断/误差失败/正常失败 \\
+重测调度 & 场景1上限3次，场景2上限2次，超限淘汰 \\
+班次控制 & 班次结束强制中断，场景1计数+1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{双目标优化模型}
+
+\subsection{优化目标}
+\begin{itemize}
+    \item \textbf{总工期最小化}：\(\min F_1 = \min\{d \mid D_{r,outdone} \leq 12d,\ \forall r\}\)
+    \item \textbf{平均漏判率最小化}：\(\min F_2 = \frac{1}{120}\sum_{r=1}^{120} P_{Lr}\)
+\end{itemize}
+
+\subsection{约束条件}
+\begin{enumerate}
+    \item 工序顺序：\(D_{r,E} \geq \max(D_{r,A}, D_{r,B}, D_{r,C})\)
+    \item 资源约束：工位单线程，测试台最多2台
+    \item 班次约束：单工序不可跨班次，\(et_{r,o,d} \leq 12\)
+    \item 重测约束：\(n_{r,o,1} \leq 3,\ n_{r,o,2} \leq 2\)
+    \item 有效工作时间比：\(YXB_o = \dfrac{T_{o,eff}}{12 \cdot T}\)
+\end{enumerate}
+
+\section{求解算法}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1cm, auto, 
+    block/.style={rectangle, draw, thick, text width=2.8cm, align=center, minimum height=0.7cm},
+    decision/.style={diamond, draw, thick, text width=2.2cm, align=center, minimum height=0.7cm},
+    arrow/.style={thick, ->, >=stealth}]
+    
+    \node[block] (start) {初始化种群};
+    \node[decision, below=of start] (check) {满足迭代次数？};
+    \node[block, below left=0.8cm and -0.3cm of check] (output) {输出种群};
+    \node[block, below right=0.8cm and -0.3cm of check] (optimize) {优化初始种群};
+    \node[block, below=of optimize] (mutation) {变异操作};
+    \node[block, below=of mutation] (crossover) {交叉操作};
+    \node[block, below=of crossover] (generate) {生成部分个体};
+    \node[block, below=of generate] (select) {选择操作};
+    \node[block, below=of select] (newpop) {新种群};
+    
+    \draw[arrow] (start) -- (check);
+    \draw[arrow] (check) -- node[above, sloped] {是} (output);
+    \draw[arrow] (check) -- node[above, sloped] {否} (optimize);
+    \draw[arrow] (optimize) -- (mutation);
+    \draw[arrow] (mutation) -- (crossover);
+    \draw[arrow] (crossover) -- (generate);
+    \draw[arrow] (generate) -- (select);
+    \draw[arrow] (select) -- (newpop);
+    \draw[arrow] (newpop) |- (check);
+    
+\end{tikzpicture}
+\caption{DE-IGA算法流程图}
+\end{figure}
+
+\subsection{算法步骤}
+\begin{enumerate}
+    \item \textbf{编码}：实数编码，染色体长度\(120\times4\)，基因位为调度优先级。
+    \item \textbf{初始化}：种群规模\(N=100\)，基因位\([0,1]\)随机。
+    \item \textbf{适应度评估}：驱动GSPN仿真，输出总工期\(T\)与平均漏判率\(\overline{P_L}\)。
+    \item \textbf{差分进化}：变异\(v_i = x_{r1}+F\cdot(x_{r2}-x_{r3})\)，交叉概率\(CR=0.9\)。
+    \item \textbf{选择}：轮盘赌选择，按适应度排序选取前\(n/2\)个体。
+    \item \textbf{Pareto排序}：非支配分层，计算拥挤度。
+    \item \textbf{精英保留}：合并父代子代，筛选100个个体。
+    \item \textbf{终止}：迭代300代或连续30代HV变化率\(<10^{-4}\)。
+\end{enumerate}
+
+\section{计算结果}
+
+\begin{table}[H]
+\centering
+\caption{问题二计算结果}
+\begin{tabular}{ccccc}
+\toprule
+完成任务平均最短天数 & 合格出厂平均数量 & 总漏判概率 & 总误判概率 \\
+\midrule
+[计算结果] & [计算结果] & [计算结果] & [计算结果] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{各小组有效工作时间比}
+\begin{tabular}{cccc}
+\toprule
+A组 & B组 & C组 & E组 \\
+\midrule
+[计算结果] & [计算结果] & [计算结果] & [计算结果] \\
+\bottomrule
+\end{tabular}
+\end{table}
+\emph{注：有效工作时间比 = 小组每班次平均有效测试时长 / 12h。}
+
+\end{document}
